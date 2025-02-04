@@ -9,6 +9,12 @@ const NET_DEVICE_ADDR_LEN: usize = 16;
 
 const DUMMY_MTU: u16 = u16::MAX;
 
+fn new_device_index() -> u32 {
+    static IDX: AtomicU32 = AtomicU32::new(0);
+    IDX.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+}
+
+#[derive(Debug, Copy, Clone)]
 pub enum NetDeviceType {
     Dummy,
     Loopback,
@@ -25,7 +31,7 @@ bitflags! {
     }
 }
 
-pub struct NetDevice {
+pub struct NetDevice_ {
     name: String,
     ty: NetDeviceType,
     mtu: u16,
@@ -35,41 +41,52 @@ pub struct NetDevice {
     addr: String,
 }
 
-//enum NetDevice
+pub trait NetDevice {
+    const DEVICE_TYPE: NetDeviceType;
+    const MTU: u16;
+    const HEADER_LEN: u16;
+    const ADDR_LEN: u16;
 
-impl NetDevice {
-    fn new() -> Self {
-        static IDX: AtomicU32 = AtomicU32::new(0);
-        let idx = IDX.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    fn open(&mut self) -> UtcpResult<()>;
+    fn close(&mut self) -> UtcpResult<()>;
+    fn transmit(&mut self, data: &[u8]) -> UtcpResult<()>;
+}
 
-        Self {
-            name: format!("net{}", idx),
-            ty: NetDeviceType::Dummy,
-            mtu: 0,
-            flags: NetDeviceFlags::empty(),
-            header_len: 0,
-            addr_len: 0,
-            addr: String::new(),
-        }
-    }
+pub struct DummyNetDevice {
+    name: String,
+}
 
-    pub fn dummy() -> Self {
-        let mut dev = Self::new();
-
-        dev.ty = NetDeviceType::Dummy;
-        dev.mtu = DUMMY_MTU;
-        dev.header_len = 0;
-        dev.addr_len = 0;
-
+impl DummyNetDevice {
+    pub fn new() -> Self {
+        let dev = Self {
+            name: format!("dev{}", new_device_index()),
+        };
         log::debug!("initialized dev={}", dev.name);
         dev
     }
 }
 
-pub trait NetDeviceOps {
-    fn open(&mut self);
-    fn close(&mut self);
-    fn transmit(&mut self);
+impl NetDevice for DummyNetDevice {
+    const DEVICE_TYPE: NetDeviceType = NetDeviceType::Dummy;
+    const MTU: u16 = DUMMY_MTU;
+    const HEADER_LEN: u16 = 0;
+    const ADDR_LEN: u16 = 0;
+
+    fn open(&mut self) -> UtcpResult<()> {
+        log::debug!("opened dev={}", self.name);
+        Ok(())
+    }
+
+    fn close(&mut self) -> UtcpResult<()> {
+        log::debug!("closed dev={}", self.name);
+        Ok(())
+    }
+
+    fn transmit(&mut self, data: &[u8]) -> UtcpResult<()> {
+        log::debug!("dev={}, type={:?}", self.name, Self::DEVICE_TYPE);
+        log::debug!("{:?}", data);
+        Ok(())
+    }
 }
 
 pub fn net_run() -> UtcpResult<()> {
