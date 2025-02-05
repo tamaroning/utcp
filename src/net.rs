@@ -34,9 +34,26 @@ pub trait NetDevice {
     const HEADER_LEN: u16;
     const ADDR_LEN: u16;
 
+    fn is_up(&self) -> bool;
     fn open(&mut self) -> UtcpResult<()>;
     fn close(&mut self) -> UtcpResult<()>;
     fn transmit(&mut self, data: &[u8], dst: &mut [u8]) -> UtcpResult<()>;
+}
+
+pub struct NetContext {
+    //devices: Vec<Box<dyn NetDevice>>,
+}
+
+impl NetContext {
+    pub fn new() -> Self {
+        let net = NetContext {};
+
+        net
+    }
+
+    fn init(&self) {
+
+    }
 }
 
 pub fn net_run() -> UtcpResult<()> {

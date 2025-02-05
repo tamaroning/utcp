@@ -1,13 +1,15 @@
-use crate::{error::UtcpResult, net};
+use crate::{error::{UtcpErr, UtcpResult}, net::{self, NetDeviceFlags}};
 
 pub struct DummyNetDevice {
     name: String,
+    flags: NetDeviceFlags,
 }
 
 impl DummyNetDevice {
     pub fn new() -> Self {
         let dev = Self {
             name: format!("dev{}", net::new_device_index()),
+            flags: NetDeviceFlags::empty(),
         };
         log::debug!("initialized dev={}", dev.name);
         dev
@@ -20,13 +22,20 @@ impl net::NetDevice for DummyNetDevice {
     const HEADER_LEN: u16 = 0;
     const ADDR_LEN: u16 = 0;
 
+    fn is_up(&self) -> bool {
+        self.flags.contains(NetDeviceFlags::UP)
+    }
+
     fn open(&mut self) -> UtcpResult<()> {
         log::debug!("opened dev={}", self.name);
+        // TODO:
+        self.flags.insert(NetDeviceFlags::UP);
         Ok(())
     }
 
     fn close(&mut self) -> UtcpResult<()> {
         log::debug!("closed dev={}", self.name);
+        // TODO:
         Ok(())
     }
 
