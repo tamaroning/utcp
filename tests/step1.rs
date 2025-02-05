@@ -1,6 +1,9 @@
 use std::sync::{Arc, atomic::AtomicBool};
 
-use utcp::net::{self, NetDevice};
+use utcp::{
+    driver::dummy::DummyNetDevice,
+    net::{self, NetDevice},
+};
 
 #[test]
 fn step1() {
@@ -11,12 +14,12 @@ fn step1() {
 
     net::net_init().unwrap();
 
-    let mut dev = net::DummyNetDevice::new();
+    let mut dev = DummyNetDevice::new();
 
     net::net_run().unwrap();
 
     while !terminate.load(std::sync::atomic::Ordering::Relaxed) {
-        dev.transmit(b"Hello, world!").unwrap();
+        dev.transmit(b"Hello, world!", &mut []).unwrap();
 
         // sleep 1s
         std::thread::sleep(std::time::Duration::from_secs(1));

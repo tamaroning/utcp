@@ -1,7 +1,7 @@
-mod driver;
-mod error;
+pub mod driver;
+pub mod error;
 pub mod net;
-mod platform;
+pub mod platform;
 
 use env_logger::fmt::Formatter;
 use log::Record;
