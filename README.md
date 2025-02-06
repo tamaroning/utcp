@@ -1,3 +1,7 @@
 # UCTP
 
-TCP/IP implementation in userspace
+TCP/IP library in userspace
+
+## License
+
+MIT
