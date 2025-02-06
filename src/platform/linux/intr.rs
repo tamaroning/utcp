@@ -13,18 +13,19 @@ use crate::{
 
 static TID: Mutex<libc::pthread_t> = Mutex::new(libc::pthread_t::MAX);
 static SIGMASK: Mutex<libc::sigset_t> = Mutex::new(unsafe { std::mem::zeroed() });
-static BARRIER: Mutex<libc::pthread_barrier_t> = Mutex::new(unsafe { std::mem::zeroed() });
+static mut BARRIER: libc::pthread_barrier_t = unsafe { std::mem::zeroed() };
 static IRQS: Mutex<Vec<IRQEntry>> = Mutex::new(vec![]);
 
 pub fn intr_init() -> UtcpResult<()> {
-    // intr_init
-    let tid = unsafe { libc::pthread_self() };
-    let mut tid_lock = TID.lock().unwrap();
-    *tid_lock = tid;
+    log::debug!("intr init");
     {
-        let mut barrier = BARRIER.lock().unwrap();
+        let tid = unsafe { libc::pthread_self() };
+        let mut tid_lock = TID.lock().unwrap();
+        *tid_lock = tid;
+    }
+    {
         unsafe {
-            libc::pthread_barrier_init(&mut *barrier, null(), 2);
+            libc::pthread_barrier_init(&raw mut BARRIER, null(), 2);
         };
     }
     {
@@ -35,6 +36,7 @@ pub fn intr_init() -> UtcpResult<()> {
             libc::sigaddset(&mut *sigmask, libc::SIGHUP);
         }
     }
+    log::debug!("intr init");
     Ok(())
 }
 
@@ -49,8 +51,7 @@ pub fn intr_run() -> UtcpResult<()> {
     if err != 0 {
         return Err(UtcpErr::Intr(format!("pthread_create failed: {}", err)));
     }
-    let mut barrier = BARRIER.lock().unwrap();
-    unsafe { libc::pthread_barrier_wait(&mut *barrier) };
+    unsafe { libc::pthread_barrier_wait(&raw mut BARRIER) };
 
     Ok(())
 }
@@ -74,8 +75,7 @@ pub fn intr_shutdown() -> UtcpResult<()> {
 extern "C" fn intr_thread(_: *mut c_void) -> *mut c_void {
     log::debug!("intr thread start");
 
-    let mut barrier = BARRIER.lock().unwrap();
-    let _ = unsafe { libc::pthread_barrier_wait(&mut *barrier) };
+    let _ = unsafe { libc::pthread_barrier_wait(&raw mut BARRIER) };
 
     let mut terminate = false;
     while !terminate {

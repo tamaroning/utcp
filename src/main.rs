@@ -14,11 +14,12 @@ fn main() {
     signal_hook::flag::register(signal_hook::consts::SIGINT, Arc::clone(&terminate)).unwrap();
 
     net::net_init().unwrap();
-
     let dev = DummyNetDevice::init().unwrap();
+
     net::net_run().unwrap();
 
     while !terminate.load(std::sync::atomic::Ordering::Relaxed) {
+        log::info!("loop");
         net::net_device_output(&dev, b"Hello, World", &mut []).unwrap();
 
         // sleep 1s

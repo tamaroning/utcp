@@ -15,7 +15,6 @@ impl DummyNetDevice {
             name: format!("dev{}", net::new_device_index()),
             flags: NetDeviceFlags::empty(),
         };
-        log::debug!("initialized dev={}", dev.name);
         let handler = net_device_register(NetDevice::Dummy(dev))?;
         Ok(handler)
     }
@@ -35,14 +34,12 @@ impl NetDeviceOps for DummyNetDevice {
     }
 
     fn open(&mut self) -> UtcpResult<()> {
-        log::debug!("opened dev={}", self.name);
         // TODO:
         self.flags.insert(NetDeviceFlags::UP);
         Ok(())
     }
 
     fn close(&mut self) -> UtcpResult<()> {
-        log::debug!("closed dev={}", self.name);
         // TODO:
         self.flags.remove(NetDeviceFlags::UP);
         Ok(())

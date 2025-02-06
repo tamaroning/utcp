@@ -121,11 +121,11 @@ pub fn net_init() -> UtcpResult<()> {
 }
 
 pub fn net_run() -> UtcpResult<()> {
-    log::info!("opening all devices");
     intr::intr_run()?;
+    log::info!("opening all devices");
     let mut devices = DEVICES.lock().unwrap();
     for (_, dev) in devices.iter_mut() {
-        dev.open()?;
+        net_device_open(dev)?;
     }
     Ok(())
 }
@@ -134,7 +134,7 @@ pub fn net_shutdown() -> UtcpResult<()> {
     intr::intr_shutdown()?;
     let mut devices = DEVICES.lock().unwrap();
     for (_, dev) in devices.iter_mut() {
-        dev.close()?;
+        net_device_close(dev)?;
     }
     log::info!("shutting down");
     Ok(())
@@ -154,14 +154,10 @@ pub fn net_device_output(dev: &NetDeviceHandler, data: &[u8], dst: &mut [u8]) ->
     dev.transmit(data, dst)
 }
 
-pub fn net_device_open(dev: &NetDeviceHandler) -> UtcpResult<()> {
-    let mut devices = DEVICES.lock().unwrap();
-    let dev = devices.get_mut(&dev.0).unwrap();
+fn net_device_open(dev: &mut NetDevice) -> UtcpResult<()> {
     dev.open()
 }
 
-pub fn net_device_close(dev: &NetDeviceHandler) -> UtcpResult<()> {
-    let mut devices = DEVICES.lock().unwrap();
-    let dev = devices.get_mut(&dev.0).unwrap();
+fn net_device_close(dev: &mut NetDevice) -> UtcpResult<()> {
     dev.close()
 }
