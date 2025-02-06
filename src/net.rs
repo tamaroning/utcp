@@ -5,7 +5,7 @@ use std::{
 
 use bitflags::bitflags;
 
-use crate::{driver::dummy::DummyNetDevice, error::UtcpResult};
+use crate::{driver::dummy::DummyNetDevice, error::UtcpResult, platform::linux::intr};
 
 pub fn new_device_index() -> u32 {
     static IDX: AtomicU32 = AtomicU32::new(0);
@@ -115,7 +115,28 @@ static DEVICES: LazyLock<Mutex<HashMap<String, NetDevice>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
 pub fn net_init() -> UtcpResult<()> {
+    intr::intr_init()?;
     log::info!("initialized");
+    Ok(())
+}
+
+pub fn net_run() -> UtcpResult<()> {
+    log::info!("opening all devices");
+    intr::intr_run()?;
+    let mut devices = DEVICES.lock().unwrap();
+    for (_, dev) in devices.iter_mut() {
+        dev.open()?;
+    }
+    Ok(())
+}
+
+pub fn net_shutdown() -> UtcpResult<()> {
+    intr::intr_shutdown()?;
+    let mut devices = DEVICES.lock().unwrap();
+    for (_, dev) in devices.iter_mut() {
+        dev.close()?;
+    }
+    log::info!("shutting down");
     Ok(())
 }
 
@@ -125,24 +146,6 @@ pub fn net_device_register(dev: NetDevice) -> UtcpResult<NetDeviceHandler> {
     let handler = NetDeviceHandler(dev.name().to_string());
     devices.insert(dev.name().to_string(), dev);
     Ok(handler)
-}
-
-pub fn net_run() -> UtcpResult<()> {
-    log::info!("opening all devices");
-    let mut devices = DEVICES.lock().unwrap();
-    for (_, dev) in devices.iter_mut() {
-        dev.open()?;
-    }
-    Ok(())
-}
-
-pub fn net_shutdown() -> UtcpResult<()> {
-    log::info!("closing all devices");
-    let mut devices = DEVICES.lock().unwrap();
-    for (_, dev) in devices.iter_mut() {
-        dev.close()?;
-    }
-    Ok(())
 }
 
 pub fn net_device_output(dev: &NetDeviceHandler, data: &[u8], dst: &mut [u8]) -> UtcpResult<()> {
