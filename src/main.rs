@@ -19,7 +19,6 @@ fn main() {
     net::net_run().unwrap();
 
     while !terminate.load(std::sync::atomic::Ordering::Relaxed) {
-        log::info!("loop");
         net::net_device_output(&dev, b"Hello, World", &mut []).unwrap();
 
         // sleep 1s

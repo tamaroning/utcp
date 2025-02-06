@@ -24,8 +24,18 @@ fn custom_format(buf: &mut Formatter, record: &Record) -> std::io::Result<()> {
 }
 
 pub fn log_init() {
+    let loglevel = std::env::var("RUST_LOG").unwrap_or_else(|_| "debug".to_string());
+    let loglevel = match loglevel.as_str() {
+        "error" => log::LevelFilter::Error,
+        "warn" => log::LevelFilter::Warn,
+        "info" => log::LevelFilter::Info,
+        "debug" => log::LevelFilter::Debug,
+        "trace" => log::LevelFilter::Trace,
+        _ => log::LevelFilter::Info,
+    };
+
     env_logger::Builder::new()
         .format(custom_format)
-        .filter(None, log::LevelFilter::Info)
+        .filter(Some("utcp"), loglevel)
         .init();
 }

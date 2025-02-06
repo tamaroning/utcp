@@ -111,6 +111,7 @@ pub trait NetDeviceOps {
 #[derive(Debug, Clone)]
 pub struct NetDeviceHandler(String);
 
+// TODO: use a better data structure, e.g. index
 static DEVICES: LazyLock<Mutex<HashMap<String, NetDevice>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -155,9 +156,21 @@ pub fn net_device_output(dev: &NetDeviceHandler, data: &[u8], dst: &mut [u8]) ->
 }
 
 fn net_device_open(dev: &mut NetDevice) -> UtcpResult<()> {
-    dev.open()
+    dev.open()?;
+    log::info!(
+        "dev={}, state={}",
+        dev.name(),
+        if dev.is_up() { "up" } else { "down" }
+    );
+    Ok(())
 }
 
 fn net_device_close(dev: &mut NetDevice) -> UtcpResult<()> {
-    dev.close()
+    dev.close()?;
+    log::info!(
+        "dev={}, state={}",
+        dev.name(),
+        if dev.is_up() { "up" } else { "down" }
+    );
+    Ok(())
 }
