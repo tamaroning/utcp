@@ -1,4 +1,4 @@
-# UCTP
+# UTCP
 
 TCP/IP library in userspace
 
