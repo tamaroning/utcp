@@ -16,7 +16,7 @@ pub fn log_init() {
     Builder::from_env(env)
         .format(|buf, record| {
             // TODO: should use timestamp?
-            let ts = ""; // buf.timestamp();
+            let ts = ""; // buf.timestamp() + " ";
             let level = record.level();
             let target = record.target();
             let args = record.args();
@@ -40,7 +40,7 @@ pub fn log_init() {
 
             write!(
                 buf,
-                "{gray_style}{ts}{gray_style:#} {level_style}[{level}]{level_style:#} {target}: {args_style}{args}{args_style:#} ({file}:{line})\n",
+                "{gray_style}{ts}{gray_style:#}{level_style}[{level}]{level_style:#} {target}: {args_style}{args}{args_style:#} ({file}:{line})\n",
             )
         })
         .init();

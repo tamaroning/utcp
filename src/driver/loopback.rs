@@ -88,7 +88,6 @@ fn loopback_isr(_: i32, handler: NetDeviceHandler) {
             NetDeviceType::Loopback,
             data.len()
         );
+        log::debug!("data_type={}, data={:?}", ty, data);
     }
-
-    //log::debug!("irq={}, dev={:?}", irq, dev);
 }
