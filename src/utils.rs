@@ -7,10 +7,10 @@ pub struct SmallQueue<T, const N: usize> {
     tail: usize,
 }
 
-impl<T, const N: usize> SmallQueue<T, N> {
+impl<T: Default, const N: usize> SmallQueue<T, N> {
     pub fn new() -> Self {
         Self {
-            buf: unsafe { core::mem::MaybeUninit::uninit().assume_init() },
+            buf: std::array::from_fn(|_| Default::default()),
             len: 0,
             head: 0,
             tail: 0,
@@ -31,9 +31,7 @@ impl<T, const N: usize> SmallQueue<T, N> {
         if self.len == 0 {
             return None;
         }
-        let elem = core::mem::replace(&mut self.buf[self.head], unsafe {
-            core::mem::MaybeUninit::uninit().assume_init()
-        });
+        let elem = core::mem::replace(&mut self.buf[self.head], Default::default());
         self.head = (self.head + 1) % self.buf.len();
         self.len -= 1;
         Some(elem)
@@ -71,4 +69,13 @@ fn test_small_queue() {
     assert_eq!(q.pop_front(), Some(11));
     assert_eq!(q.pop_front(), Some(12));
     assert_eq!(q.pop_front(), Some(13));
+}
+
+#[test]
+fn test_small_queue2() {
+    let mut q = SmallQueue::<(u16, Vec<u8>), 3>::new();
+    q.push((1, b"Hello, World".to_vec()));
+    q.push((2, b"Hello, Rust".to_vec()));
+    assert_eq!(q.pop_front(), Some((1, b"Hello, World".to_vec())));
+    assert_eq!(q.pop_front(), Some((2, b"Hello, Rust".to_vec())));
 }
