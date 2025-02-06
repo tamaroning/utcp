@@ -1,10 +1,16 @@
-use std::sync::{LazyLock, LockResult, RwLock, RwLockWriteGuard, atomic::AtomicU32};
+use std::{
+    collections::VecDeque,
+    sync::{LazyLock, LockResult, RwLock, RwLockWriteGuard, atomic::AtomicU32},
+};
 
 use bitflags::bitflags;
 use crossbeam_skiplist::{SkipList, SkipMap, SkipSet};
 
 use crate::{
-    driver::{dummy::DummyNetDevice, loopback::LoopbackNetDevice}, error::{UtcpErr, UtcpResult}, ip, platform::linux::intr
+    driver::{self, INTR_IRQ_SOFTIRQ, dummy::DummyNetDevice, loopback::LoopbackNetDevice},
+    error::{UtcpErr, UtcpResult},
+    ip,
+    platform::linux::intr,
 };
 
 pub const NET_PROTOCOL_TYPE_IP: u16 = 0x0800;
@@ -209,18 +215,24 @@ fn net_device_close(dev: &mut NetDevice) -> UtcpResult<()> {
 }
 
 #[allow(static_mut_refs)]
-pub fn net_input_handler(dev: &NetDeviceHandler, r#type: u16, data: &[u8]) {
+pub fn net_input_handler(dev: &NetDeviceHandler, r#type: u16, data: &[u8]) -> UtcpResult<()> {
     log::debug!("dev={}, type={}, len={}", dev.private, r#type, data.len());
     log::debug!("data={:?}", data);
 
     // Safety: We know that the current thread is the only one accessing the static variable
-    for proto in unsafe { NET_PROTOCOLS.iter() } {
+    for proto in unsafe { NET_PROTOCOLS.iter_mut() } {
         if proto.ty == r#type {
-            (proto.handler)(data, &dev);
-            return;
+            // enqueue the packet to the protocol queue
+            proto.queue.push_back(NetProtocolQueueEntry {
+                dev: dev.clone(),
+                data: data.to_vec(),
+            });
+            intr::intr_raise_irq(INTR_IRQ_SOFTIRQ)?;
+            return Ok(());
         }
     }
     // unsupported protocol. drop the packet
+    Ok(())
 }
 
 #[macro_export]
@@ -235,6 +247,22 @@ static mut NET_PROTOCOLS: Vec<NetProtocol> = Vec::new();
 pub struct NetProtocol {
     pub ty: u16,
     pub handler: fn(data: &[u8], dev: &NetDeviceHandler),
+    queue: VecDeque<NetProtocolQueueEntry>,
+}
+
+impl NetProtocol {
+    pub fn new(ty: u16, handler: fn(data: &[u8], dev: &NetDeviceHandler)) -> Self {
+        Self {
+            ty,
+            handler,
+            queue: VecDeque::new(),
+        }
+    }
+}
+
+pub struct NetProtocolQueueEntry {
+    dev: NetDeviceHandler,
+    data: Vec<u8>,
 }
 
 #[allow(static_mut_refs)]
@@ -244,4 +272,15 @@ pub fn net_protocol_register(proto: NetProtocol) {
     unsafe {
         NET_PROTOCOLS.push(proto);
     }
+}
+
+#[allow(static_mut_refs)]
+pub fn net_softirq_handler() -> UtcpResult<()> {
+    log::debug!("softirq handler");
+    for proto in unsafe { NET_PROTOCOLS.iter_mut() } {
+        while let Some(entry) = proto.queue.pop_front() {
+            (proto.handler)(&entry.data, &entry.dev);
+        }
+    }
+    Ok(())
 }

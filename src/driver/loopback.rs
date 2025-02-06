@@ -80,7 +80,8 @@ fn loopback_isr(_: i32, handler: NetDeviceHandler) {
     let dev = dev.try_into_loopback().unwrap();
 
     while let Some((ty, data)) = dev.queue.pop_front() {
-        net::net_input_handler(&handler, ty, &data);
+        // TODO: remove unwrap?
+        net::net_input_handler(&handler, ty, &data).unwrap();
         log::debug!(
             "queue popped (num:{}), dev={}, type={:?}, len={}",
             dev.queue.len(),

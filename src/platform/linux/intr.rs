@@ -7,8 +7,9 @@ use std::{
 use libc::SIG_BLOCK;
 
 use crate::{
+    driver::INTR_IRQ_SOFTIRQ,
     error::{UtcpErr, UtcpResult},
-    net::NetDeviceHandler,
+    net::{self, NetDeviceHandler},
     platform::{IRQEntry, IRQFlags},
 };
 
@@ -72,6 +73,8 @@ pub fn intr_init() -> UtcpResult<()> {
             libc::sigemptyset(&mut *sigmask);
             // notify the intr thread exit
             libc::sigaddset(&mut *sigmask, libc::SIGHUP);
+            // notify the intr thread to handle received packets
+            libc::sigaddset(&mut *sigmask, INTR_IRQ_SOFTIRQ);
         }
     }
     log::debug!("intr init");
@@ -132,12 +135,18 @@ extern "C" fn intr_thread(_: *mut c_void) -> *mut c_void {
                 log::error!("sigwait failed: {}", err);
                 break;
             }
-            if sig_sent == libc::SIGHUP {
-                terminate = true;
-            } else {
-                for ent in &*irqs {
-                    if ent.irq == sig_sent {
-                        (ent.handler)(sig_sent, ent.dev.clone());
+            match sig_sent {
+                libc::SIGHUP => {
+                    terminate = true;
+                }
+                INTR_IRQ_SOFTIRQ => {
+                    net::net_softirq_handler().unwrap();
+                }
+                _ => {
+                    for ent in &*irqs {
+                        if ent.irq == sig_sent {
+                            (ent.handler)(sig_sent, ent.dev.clone());
+                        }
                     }
                 }
             }

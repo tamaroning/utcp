@@ -1,9 +1,9 @@
 pub mod driver;
 pub mod error;
+pub mod ip;
 pub mod net;
 pub mod platform;
 pub mod utils;
-pub mod ip;
 
 use env_logger::{Builder, Env, fmt::style};
 use log::Level;

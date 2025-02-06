@@ -8,10 +8,7 @@ fn ip_input(data: &[u8], dev: &NetDeviceHandler) {
 }
 
 pub fn ip_init() -> UtcpResult<()> {
-    net::net_protocol_register(NetProtocol {
-        ty: NET_PROTOCOL_TYPE_IP,
-        handler: ip_input,
-    });
+    net::net_protocol_register(NetProtocol::new(NET_PROTOCOL_TYPE_IP, ip_input));
     log::info!("initialized");
     Ok(())
 }
