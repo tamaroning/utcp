@@ -1,5 +1,9 @@
-use crate::{error::{UtcpErr, UtcpResult}, net::{self, NetDeviceFlags}};
+use crate::{
+    error::{UtcpErr, UtcpResult},
+    net::{self, NetDeviceFlags, NetDeviceOps},
+};
 
+#[derive(Debug)]
 pub struct DummyNetDevice {
     name: String,
     flags: NetDeviceFlags,
@@ -16,11 +20,10 @@ impl DummyNetDevice {
     }
 }
 
-impl net::NetDevice for DummyNetDevice {
-    const DEVICE_TYPE: net::NetDeviceType = net::NetDeviceType::Dummy;
-    const MTU: u16 = net::DUMMY_MTU;
-    const HEADER_LEN: u16 = 0;
-    const ADDR_LEN: u16 = 0;
+impl NetDeviceOps for DummyNetDevice {
+    const MTU: u16 = u16::MAX;
+    const HEADER_LEN: usize = 0;
+    const ADDR_LEN: usize = 0;
 
     fn is_up(&self) -> bool {
         self.flags.contains(NetDeviceFlags::UP)
@@ -40,7 +43,7 @@ impl net::NetDevice for DummyNetDevice {
     }
 
     fn transmit(&mut self, data: &[u8], _: &mut [u8]) -> UtcpResult<()> {
-        log::debug!("dev={}, type={:?}", self.name, Self::DEVICE_TYPE);
+        log::debug!("dev={}, type=dummy", self.name);
         log::debug!("{:?}", data);
         Ok(())
     }

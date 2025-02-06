@@ -1,41 +1,48 @@
 use std::{
     ffi::c_void,
     ptr::{self, null, null_mut},
+    sync::Mutex,
 };
 
 use libc::SIG_BLOCK;
 
-use crate::error::{UtcpErr, UtcpResult};
+use crate::{
+    error::{UtcpErr, UtcpResult},
+    platform::IRQEntry,
+};
+
+static SIGMASK: Mutex<libc::sigset_t> = Mutex::new(unsafe { std::mem::zeroed() });
+static BARRIER: Mutex<libc::pthread_barrier_t> = Mutex::new(unsafe { std::mem::zeroed() });
+static IRQS: Mutex<Vec<IRQEntry>> = Mutex::new(vec![]);
 
 pub struct IntrContext {
-    sigmask: libc::sigset_t,
     tid: libc::pthread_t,
-    barrier: *mut libc::pthread_barrier_t,
 }
 
 impl IntrContext {
     pub fn new() -> Self {
         // intr_init
         let tid = unsafe { libc::pthread_self() };
-        let barrier = unsafe { std::mem::zeroed() };
-        unsafe {
-            libc::pthread_barrier_init(barrier, null(), 2);
-        };
-        let mut sigmask = unsafe { std::mem::zeroed() };
-        unsafe {
-            libc::sigemptyset(&mut sigmask);
-            // notify the intr thread exit
-            libc::sigaddset(&mut sigmask, libc::SIGHUP);
+        {
+            let mut barrier = BARRIER.lock().unwrap();
+            unsafe {
+                libc::pthread_barrier_init(&mut *barrier, null(), 2);
+            };
         }
-        IntrContext {
-            sigmask,
-            tid,
-            barrier,
+        {
+            let mut sigmask = SIGMASK.lock().unwrap();
+            unsafe {
+                libc::sigemptyset(&mut *sigmask);
+                // notify the intr thread exit
+                libc::sigaddset(&mut *sigmask, libc::SIGHUP);
+            }
         }
+        IntrContext { tid }
     }
 
     pub fn run(&mut self) -> UtcpResult<()> {
-        let err = unsafe { libc::pthread_sigmask(SIG_BLOCK, &self.sigmask, ptr::null_mut()) };
+        let sigmask = SIGMASK.lock().unwrap();
+        let err = unsafe { libc::pthread_sigmask(SIG_BLOCK, &*sigmask, ptr::null_mut()) };
         if err != 0 {
             return Err(UtcpErr::Intr(format!("pthread_sigmask failed: {}", err)));
         }
@@ -44,7 +51,8 @@ impl IntrContext {
         if err != 0 {
             return Err(UtcpErr::Intr(format!("pthread_create failed: {}", err)));
         }
-        unsafe { libc::pthread_barrier_wait(self.barrier) };
+        let mut barrier = BARRIER.lock().unwrap();
+        unsafe { libc::pthread_barrier_wait(&mut *barrier) };
 
         Ok(())
     }
@@ -73,6 +81,33 @@ impl Drop for IntrContext {
 extern "C" fn intr_thread(_: *mut c_void) -> *mut c_void {
     log::debug!("intr thread start");
 
-    // TODO:
+    let mut barrier = BARRIER.lock().unwrap();
+    let _ = unsafe { libc::pthread_barrier_wait(&mut *barrier) };
+
+    let mut terminate = false;
+    while !terminate {
+        {
+            let sigmask = SIGMASK.lock().unwrap();
+            let mut sig = 0;
+            let err = unsafe { libc::sigwait(&*sigmask, &mut sig) };
+            if err != 0 {
+                log::error!("sigwait failed: {}", err);
+                break;
+            }
+            if sig == libc::SIGHUP {
+                terminate = true;
+            } else {
+                let irqs = IRQS.lock().unwrap();
+                for irq in &*irqs {
+                    if irq.irq == sig as u32 {
+                        // TODO:
+                        //irq.handler(irq.data);
+                    }
+                }
+            }
+        }
+    }
+    
+    log::debug!("intr thread terminated");
     ptr::null_mut()
 }

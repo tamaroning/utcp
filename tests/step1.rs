@@ -2,7 +2,7 @@ use std::sync::{Arc, atomic::AtomicBool};
 
 use utcp::{
     driver::dummy::DummyNetDevice,
-    net::{self, NetDevice},
+    net::{self, NetDevice, NetDeviceOps},
 };
 
 #[test]

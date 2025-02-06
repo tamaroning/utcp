@@ -1,24 +1,16 @@
-use std::sync::atomic::AtomicU32;
+use std::sync::{Mutex, atomic::AtomicU32};
 
 use bitflags::bitflags;
 
-use crate::error::UtcpResult;
-
-pub const DUMMY_MTU: u16 = u16::MAX;
+use crate::{driver::dummy::DummyNetDevice, error::UtcpResult};
 
 pub fn new_device_index() -> u32 {
     static IDX: AtomicU32 = AtomicU32::new(0);
     IDX.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
-#[derive(Debug, Copy, Clone)]
-pub enum NetDeviceType {
-    Dummy,
-    Loopback,
-    Ethernet,
-}
-
 bitflags! {
+    #[derive(Debug)]
     pub struct NetDeviceFlags: u16 {
         const UP = 0x1;
         const LOOPBACK = 0x10;
@@ -28,11 +20,59 @@ bitflags! {
     }
 }
 
-pub trait NetDevice {
-    const DEVICE_TYPE: NetDeviceType;
+#[derive(Debug)]
+pub enum NetDevice {
+    Dummy(DummyNetDevice),
+    Loopback,
+    Ethernet,
+}
+
+impl NetDevice {
+    fn mtu(&self) -> u16 {
+        match self {
+            NetDevice::Dummy(dev) => 0,
+            NetDevice::Loopback => todo!(),
+            NetDevice::Ethernet => todo!(),
+        }
+    }
+
+    fn is_up(&self) -> bool {
+        match self {
+            NetDevice::Dummy(dev) => dev.is_up(),
+            NetDevice::Loopback => false,
+            NetDevice::Ethernet => false,
+        }
+    }
+
+    fn open(&mut self) -> UtcpResult<()> {
+        match self {
+            NetDevice::Dummy(dev) => dev.open(),
+            NetDevice::Loopback => todo!(),
+            NetDevice::Ethernet => todo!(),
+        }
+    }
+
+    fn close(&mut self) -> UtcpResult<()> {
+        match self {
+            NetDevice::Dummy(dev) => dev.close(),
+            NetDevice::Loopback => todo!(),
+            NetDevice::Ethernet => todo!(),
+        }
+    }
+
+    fn transmit(&mut self, data: &[u8], dst: &mut [u8]) -> UtcpResult<()> {
+        match self {
+            NetDevice::Dummy(dev) => dev.transmit(data, dst),
+            NetDevice::Loopback => todo!(),
+            NetDevice::Ethernet => todo!(),
+        }
+    }
+}
+
+pub trait NetDeviceOps {
     const MTU: u16;
-    const HEADER_LEN: u16;
-    const ADDR_LEN: u16;
+    const HEADER_LEN: usize;
+    const ADDR_LEN: usize;
 
     fn is_up(&self) -> bool;
     fn open(&mut self) -> UtcpResult<()>;
@@ -41,19 +81,16 @@ pub trait NetDevice {
 }
 
 pub struct NetContext {
-    //devices: Vec<Box<dyn NetDevice>>,
+    devices: Vec<Mutex<NetDevice>>,
 }
 
 impl NetContext {
     pub fn new() -> Self {
-        let net = NetContext {};
-
+        let net = NetContext { devices: vec![] }; 
         net
     }
 
-    fn init(&self) {
-
-    }
+    fn init(&self) {}
 }
 
 pub fn net_run() -> UtcpResult<()> {
