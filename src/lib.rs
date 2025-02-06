@@ -3,6 +3,7 @@ pub mod error;
 pub mod net;
 pub mod platform;
 pub mod utils;
+pub mod ip;
 
 use env_logger::{Builder, Env, fmt::style};
 use log::Level;
@@ -18,7 +19,7 @@ pub fn log_init() {
             // TODO: should use timestamp?
             let ts = ""; // buf.timestamp() + " ";
             let level = record.level();
-            let target = record.target();
+            let target = record.target().replace("utcp::", "");
             let args = record.args();
             let file = record.file().unwrap_or("unknown");
             let line = record.line().unwrap_or(0);

@@ -1,13 +1,15 @@
 use std::sync::{LazyLock, LockResult, RwLock, RwLockWriteGuard, atomic::AtomicU32};
 
 use bitflags::bitflags;
-use crossbeam_skiplist::SkipMap;
+use crossbeam_skiplist::{SkipList, SkipMap, SkipSet};
 
 use crate::{
-    driver::{dummy::DummyNetDevice, loopback::LoopbackNetDevice},
-    error::{UtcpErr, UtcpResult},
-    platform::linux::intr,
+    driver::{dummy::DummyNetDevice, loopback::LoopbackNetDevice}, error::{UtcpErr, UtcpResult}, ip, platform::linux::intr
 };
+
+pub const NET_PROTOCOL_TYPE_IP: u16 = 0x0800;
+pub const NET_PROTOCOL_TYPE_ARP: u16 = 0x0806;
+pub const NET_PROTOCOL_TYPE_IPV6: u16 = 0x86dd;
 
 pub fn new_device_index() -> u32 {
     static IDX: AtomicU32 = AtomicU32::new(0);
@@ -136,6 +138,7 @@ pub static DEVICES: LazyLock<SkipMap<String, RwLock<NetDevice>>> = LazyLock::new
 
 pub fn net_init() -> UtcpResult<()> {
     intr::intr_init()?;
+    ip::ip_init()?;
     log::info!("initialized");
     Ok(())
 }
@@ -205,9 +208,19 @@ fn net_device_close(dev: &mut NetDevice) -> UtcpResult<()> {
     Ok(())
 }
 
+#[allow(static_mut_refs)]
 pub fn net_input_handler(dev: &NetDeviceHandler, r#type: u16, data: &[u8]) {
     log::debug!("dev={}, type={}, len={}", dev.private, r#type, data.len());
     log::debug!("data={:?}", data);
+
+    // Safety: We know that the current thread is the only one accessing the static variable
+    for proto in unsafe { NET_PROTOCOLS.iter() } {
+        if proto.ty == r#type {
+            (proto.handler)(data, &dev);
+            return;
+        }
+    }
+    // unsupported protocol. drop the packet
 }
 
 #[macro_export]
@@ -215,4 +228,20 @@ macro_rules! net_device_get {
     ($handler:expr) => {
         DEVICES.get(&$handler.private).unwrap()
     };
+}
+
+static mut NET_PROTOCOLS: Vec<NetProtocol> = Vec::new();
+
+pub struct NetProtocol {
+    pub ty: u16,
+    pub handler: fn(data: &[u8], dev: &NetDeviceHandler),
+}
+
+#[allow(static_mut_refs)]
+pub fn net_protocol_register(proto: NetProtocol) {
+    log::info!("registered protocol={:?}", proto.ty);
+    // Safety: We know that the current thread is the only one accessing the static variable
+    unsafe {
+        NET_PROTOCOLS.push(proto);
+    }
 }

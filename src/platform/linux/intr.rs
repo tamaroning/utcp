@@ -122,9 +122,10 @@ extern "C" fn intr_thread(_: *mut c_void) -> *mut c_void {
     let _ = unsafe { libc::pthread_barrier_wait(&raw mut BARRIER) };
 
     let mut terminate = false;
+    let sigmask = SIGMASK.lock().unwrap();
+    let irqs = IRQS.lock().unwrap();
     while !terminate {
         {
-            let sigmask = SIGMASK.lock().unwrap();
             let mut sig_sent = 0;
             let err = unsafe { libc::sigwait(&*sigmask, &mut sig_sent) };
             if err != 0 {
@@ -134,7 +135,6 @@ extern "C" fn intr_thread(_: *mut c_void) -> *mut c_void {
             if sig_sent == libc::SIGHUP {
                 terminate = true;
             } else {
-                let irqs = IRQS.lock().unwrap();
                 for ent in &*irqs {
                     if ent.irq == sig_sent {
                         (ent.handler)(sig_sent, ent.dev.clone());
