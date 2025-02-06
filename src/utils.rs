@@ -1,4 +1,4 @@
-/// Fixed-length queue that drops the oldest element when full
+/// Fixed-length queue that drops the oldest element when it is full.
 #[derive(Debug)]
 pub struct SmallQueue<T, const N: usize> {
     buf: [T; N],
@@ -61,4 +61,14 @@ fn test_small_queue() {
     assert_eq!(q.pop_front(), Some(5));
     assert_eq!(q.pop_front(), Some(6));
     assert_eq!(q.pop_front(), None);
+    q.push(7);
+    q.push(8);
+    q.push(9);
+    q.push(10);
+    q.push(11);
+    q.push(12);
+    q.push(13);
+    assert_eq!(q.pop_front(), Some(11));
+    assert_eq!(q.pop_front(), Some(12));
+    assert_eq!(q.pop_front(), Some(13));
 }

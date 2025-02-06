@@ -1,11 +1,10 @@
-use std::collections::VecDeque;
-
 use crate::{
     error::UtcpResult,
     net::{
-        self, NetDevice, NetDeviceFlags, NetDeviceHandler, NetDeviceOps, NetDeviceType,
+        self, DEVICES, NetDevice, NetDeviceFlags, NetDeviceHandler, NetDeviceOps, NetDeviceType,
         net_device_register,
     },
+    net_device_get,
     platform::{IRQFlags, linux::intr},
     utils::SmallQueue,
 };
@@ -19,7 +18,7 @@ const LOOPBACK_IRQ: i32 = INTR_IRQ_BASE + 1;
 pub struct LoopbackNetDevice {
     name: String,
     flags: NetDeviceFlags,
-    queue: SmallQueue<Vec<u8>, LOOPBACK_QUEUE_LIMIT>,
+    pub(self) queue: SmallQueue<(u16, Vec<u8>), LOOPBACK_QUEUE_LIMIT>,
 }
 
 impl LoopbackNetDevice {
@@ -60,8 +59,8 @@ impl NetDeviceOps for LoopbackNetDevice {
         Ok(())
     }
 
-    fn transmit(&mut self, data: &[u8], _: &mut [u8]) -> UtcpResult<()> {
-        let _ = self.queue.push(data.to_vec());
+    fn transmit(&mut self, ty: u16, data: &[u8], _: &mut [u8]) -> UtcpResult<()> {
+        let _ = self.queue.push((ty, data.to_vec()));
         log::debug!(
             "queue pushed (num:{}), dev={}, type={:?}, len={}",
             self.queue.len(),
@@ -74,7 +73,22 @@ impl NetDeviceOps for LoopbackNetDevice {
     }
 }
 
-fn loopback_isr(irq: i32, dev: NetDeviceHandler) {
+fn loopback_isr(_: i32, handler: NetDeviceHandler) {
+    let ent = net_device_get!(&handler);
+    let mut guard = ent.value().write().unwrap();
+    let dev = &mut *guard;
+    let dev = dev.try_into_loopback().unwrap();
+
+    while let Some((ty, data)) = dev.queue.pop_front() {
+        net::net_input_handler(&handler, ty, &data);
+        log::debug!(
+            "queue popped (num:{}), dev={}, type={:?}, len={}",
+            dev.queue.len(),
+            dev.name,
+            NetDeviceType::Loopback,
+            data.len()
+        );
+    }
 
     //log::debug!("irq={}, dev={:?}", irq, dev);
 }

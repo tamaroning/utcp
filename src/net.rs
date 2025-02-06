@@ -1,13 +1,11 @@
-use std::{
-    collections::HashMap,
-    sync::{LazyLock, Mutex, atomic::AtomicU32},
-};
+use std::sync::{LazyLock, LockResult, RwLock, RwLockWriteGuard, atomic::AtomicU32};
 
 use bitflags::bitflags;
+use crossbeam_skiplist::SkipMap;
 
 use crate::{
     driver::{dummy::DummyNetDevice, loopback::LoopbackNetDevice},
-    error::UtcpResult,
+    error::{UtcpErr, UtcpResult},
     platform::linux::intr,
 };
 
@@ -90,11 +88,18 @@ impl NetDevice {
         }
     }
 
-    fn transmit(&mut self, data: &[u8], dst: &mut [u8]) -> UtcpResult<()> {
+    fn transmit(&mut self, ty: u16, data: &[u8], dst: &mut [u8]) -> UtcpResult<()> {
         match self {
-            NetDevice::Dummy(dev) => dev.transmit(data, dst),
-            NetDevice::Loopback(dev) => dev.transmit(data, dst),
+            NetDevice::Dummy(dev) => dev.transmit(ty, data, dst),
+            NetDevice::Loopback(dev) => dev.transmit(ty, data, dst),
             NetDevice::Ethernet => todo!(),
+        }
+    }
+
+    pub fn try_into_loopback(&mut self) -> UtcpResult<&mut LoopbackNetDevice> {
+        match self {
+            NetDevice::Loopback(dev) => Ok(dev),
+            _ => Err(UtcpErr::Net("not a loopback device".into())),
         }
     }
 }
@@ -109,17 +114,25 @@ pub trait NetDeviceOps {
 
     fn open(&mut self) -> UtcpResult<()>;
     fn close(&mut self) -> UtcpResult<()>;
-    fn transmit(&mut self, data: &[u8], dst: &mut [u8]) -> UtcpResult<()>;
+    fn transmit(&mut self, ty: u16, data: &[u8], dst: &mut [u8]) -> UtcpResult<()>;
 }
 
-#[derive(Debug, Clone)]
-pub struct NetDeviceHandler(String);
-
 // TODO: use a better data structure, e.g. index
-static DEVICES: LazyLock<Mutex<HashMap<String, NetDevice>>> =
-    LazyLock::new(|| Mutex::new(HashMap::new()));
+#[derive(Debug, Clone)]
+pub struct NetDeviceHandler {
+    /// Note: Do not use this directly, use `net_device_get` instead.
+    /// FIXME: make this more user-friendly
+    pub(crate) private: String,
+}
 
-static mut DEVICES2: LazyLock<HashMap<String, NetDevice>> = LazyLock::new(|| HashMap::new());
+impl NetDeviceHandler {
+    fn new(private: String) -> Self {
+        Self { private }
+    }
+}
+
+/// Note: Do not use this directly, use `net_device_get` instead.
+pub static DEVICES: LazyLock<SkipMap<String, RwLock<NetDevice>>> = LazyLock::new(|| SkipMap::new());
 
 pub fn net_init() -> UtcpResult<()> {
     intr::intr_init()?;
@@ -130,24 +143,19 @@ pub fn net_init() -> UtcpResult<()> {
 pub fn net_run() -> UtcpResult<()> {
     intr::intr_run()?;
     log::info!("opening all devices");
-    /*
-    for (_, dev) in DEVICES2.iter_mut() {
-        net_device_open(dev)?;
-    }
-    */
 
-    let mut devices = DEVICES.lock().unwrap();
-    for (_, dev) in devices.iter_mut() {
-        net_device_open(dev)?;
+    for ent in DEVICES.iter() {
+        let mut dev = ent.value().write().unwrap();
+        net_device_open(&mut *dev)?;
     }
     Ok(())
 }
 
 pub fn net_shutdown() -> UtcpResult<()> {
     intr::intr_shutdown()?;
-    let mut devices = DEVICES.lock().unwrap();
-    for (_, dev) in devices.iter_mut() {
-        net_device_close(dev)?;
+    for ent in DEVICES.iter() {
+        let mut dev = ent.value().write().unwrap();
+        net_device_close(&mut *dev)?;
     }
     log::info!("shutting down");
     Ok(())
@@ -155,16 +163,26 @@ pub fn net_shutdown() -> UtcpResult<()> {
 
 pub fn net_device_register(dev: NetDevice) -> UtcpResult<NetDeviceHandler> {
     log::debug!("register dev={}, type={:?}", dev.name(), dev.device_type());
-    let mut devices = DEVICES.lock().unwrap();
-    let handler = NetDeviceHandler(dev.name().to_string());
-    devices.insert(dev.name().to_string(), dev);
+    let handler = NetDeviceHandler::new(dev.name().to_string());
+    DEVICES.insert(dev.name().to_string(), RwLock::new(dev));
     Ok(handler)
 }
 
-pub fn net_device_output(dev: &NetDeviceHandler, data: &[u8], dst: &mut [u8]) -> UtcpResult<()> {
-    let mut devices = DEVICES.lock().unwrap();
-    let dev = devices.get_mut(&dev.0).unwrap();
-    dev.transmit(data, dst)
+pub fn net_device_output(
+    dev: &NetDeviceHandler,
+    r#type: u16,
+    data: &[u8],
+    dst: &mut [u8],
+) -> UtcpResult<()> {
+    let dev = DEVICES.get(&dev.private).unwrap();
+    let mut dev = dev.value().write().unwrap();
+    if !dev.is_up() {
+        return Err(UtcpErr::Net("device not opened".into()));
+    }
+    if data.len() > dev.mtu() as usize {
+        return Err(UtcpErr::Net("data too large".into()));
+    }
+    dev.transmit(r#type, data, dst)
 }
 
 fn net_device_open(dev: &mut NetDevice) -> UtcpResult<()> {
@@ -185,4 +203,16 @@ fn net_device_close(dev: &mut NetDevice) -> UtcpResult<()> {
         if dev.is_up() { "up" } else { "down" }
     );
     Ok(())
+}
+
+pub fn net_input_handler(dev: &NetDeviceHandler, r#type: u16, data: &[u8]) {
+    log::debug!("dev={}, type={}, len={}", dev.private, r#type, data.len());
+    log::debug!("data={:?}", data);
+}
+
+#[macro_export]
+macro_rules! net_device_get {
+    ($handler:expr) => {
+        DEVICES.get(&$handler.private).unwrap()
+    };
 }

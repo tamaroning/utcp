@@ -53,9 +53,9 @@ impl NetDeviceOps for DummyNetDevice {
         Ok(())
     }
 
-    fn transmit(&mut self, data: &[u8], _: &mut [u8]) -> UtcpResult<()> {
+    fn transmit(&mut self, ty: u16, data: &[u8], _: &mut [u8]) -> UtcpResult<()> {
         log::debug!("dev={}, type=dummy", self.name);
-        log::debug!("{:?}", data);
+        log::debug!("data_type={}, data={:?}", ty, data);
         intr::intr_raise_irq(DUMMY_IRQ)?;
         Ok(())
     }
