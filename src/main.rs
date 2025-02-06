@@ -6,7 +6,6 @@ mod platform;
 use std::sync::{Arc, atomic::AtomicBool};
 
 use driver::dummy::DummyNetDevice;
-use net::NetDeviceOps;
 
 fn main() {
     utcp::log_init();
@@ -16,12 +15,11 @@ fn main() {
 
     net::net_init().unwrap();
 
-    let mut dev = DummyNetDevice::new();
-
+    let dev = DummyNetDevice::init().unwrap();
     net::net_run().unwrap();
 
     while !terminate.load(std::sync::atomic::Ordering::Relaxed) {
-        dev.transmit(b"Hello, world!", &mut []).unwrap();
+        net::net_device_output(&dev, b"Hello, World", &mut []).unwrap();
 
         // sleep 1s
         std::thread::sleep(std::time::Duration::from_secs(1));

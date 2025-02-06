@@ -1,4 +1,7 @@
-use std::sync::{Mutex, atomic::AtomicU32};
+use std::{
+    collections::HashMap,
+    sync::{LazyLock, Mutex, atomic::AtomicU32},
+};
 
 use bitflags::bitflags;
 
@@ -27,10 +30,33 @@ pub enum NetDevice {
     Ethernet,
 }
 
+#[derive(Debug)]
+pub enum NetDeviceType {
+    Dummy,
+    Loopback,
+    Ethernet,
+}
+
 impl NetDevice {
+    fn device_type(&self) -> NetDeviceType {
+        match self {
+            NetDevice::Dummy(_) => NetDeviceType::Dummy,
+            NetDevice::Loopback => NetDeviceType::Loopback,
+            NetDevice::Ethernet => NetDeviceType::Ethernet,
+        }
+    }
+
     fn mtu(&self) -> u16 {
         match self {
             NetDevice::Dummy(dev) => 0,
+            NetDevice::Loopback => todo!(),
+            NetDevice::Ethernet => todo!(),
+        }
+    }
+
+    fn name(&self) -> &str {
+        match self {
+            NetDevice::Dummy(dev) => dev.name(),
             NetDevice::Loopback => todo!(),
             NetDevice::Ethernet => todo!(),
         }
@@ -75,34 +101,64 @@ pub trait NetDeviceOps {
     const ADDR_LEN: usize;
 
     fn is_up(&self) -> bool;
+    fn name(&self) -> &str;
+
     fn open(&mut self) -> UtcpResult<()>;
     fn close(&mut self) -> UtcpResult<()>;
     fn transmit(&mut self, data: &[u8], dst: &mut [u8]) -> UtcpResult<()>;
 }
 
-pub struct NetContext {
-    devices: Vec<Mutex<NetDevice>>,
+#[derive(Debug, Clone)]
+pub struct NetDeviceHandler(String);
+
+static DEVICES: LazyLock<Mutex<HashMap<String, NetDevice>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
+
+pub fn net_init() -> UtcpResult<()> {
+    log::info!("initialized");
+    Ok(())
 }
 
-impl NetContext {
-    pub fn new() -> Self {
-        let net = NetContext { devices: vec![] }; 
-        net
-    }
-
-    fn init(&self) {}
+pub fn net_device_register(dev: NetDevice) -> UtcpResult<NetDeviceHandler> {
+    log::debug!("register dev={}, type={:?}", dev.name(), dev.device_type());
+    let mut devices = DEVICES.lock().unwrap();
+    let handler = NetDeviceHandler(dev.name().to_string());
+    devices.insert(dev.name().to_string(), dev);
+    Ok(handler)
 }
 
 pub fn net_run() -> UtcpResult<()> {
+    log::info!("opening all devices");
+    let mut devices = DEVICES.lock().unwrap();
+    for (_, dev) in devices.iter_mut() {
+        dev.open()?;
+    }
     Ok(())
 }
 
 pub fn net_shutdown() -> UtcpResult<()> {
     log::info!("closing all devices");
+    let mut devices = DEVICES.lock().unwrap();
+    for (_, dev) in devices.iter_mut() {
+        dev.close()?;
+    }
     Ok(())
 }
 
-pub fn net_init() -> UtcpResult<()> {
-    log::info!("initialized");
-    Ok(())
+pub fn net_device_output(dev: &NetDeviceHandler, data: &[u8], dst: &mut [u8]) -> UtcpResult<()> {
+    let mut devices = DEVICES.lock().unwrap();
+    let dev = devices.get_mut(&dev.0).unwrap();
+    dev.transmit(data, dst)
+}
+
+pub fn net_device_open(dev: &NetDeviceHandler) -> UtcpResult<()> {
+    let mut devices = DEVICES.lock().unwrap();
+    let dev = devices.get_mut(&dev.0).unwrap();
+    dev.open()
+}
+
+pub fn net_device_close(dev: &NetDeviceHandler) -> UtcpResult<()> {
+    let mut devices = DEVICES.lock().unwrap();
+    let dev = devices.get_mut(&dev.0).unwrap();
+    dev.close()
 }
