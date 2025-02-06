@@ -5,7 +5,7 @@ edition = "2024"
 
 [dependencies]
 bitflags = "2.8.0"
-env_logger = "0.11.6"
+env_logger = { version="0.11.6", features=["color"] }
 libc = "0.2.169"
 log = "0.4.25"
 signal-hook = "0.3.17"

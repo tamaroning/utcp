@@ -1,5 +1,5 @@
 use std::{
-    ffi::c_void,
+    ffi::{c_int, c_void},
     ptr::{self, null, null_mut},
     sync::Mutex,
 };
@@ -8,20 +8,58 @@ use libc::SIG_BLOCK;
 
 use crate::{
     error::{UtcpErr, UtcpResult},
-    platform::IRQEntry,
+    net::NetDeviceHandler,
+    platform::{IRQEntry, IRQFlags},
 };
 
-static TID: Mutex<libc::pthread_t> = Mutex::new(libc::pthread_t::MAX);
+static IRQS: Mutex<Vec<IRQEntry>> = Mutex::new(vec![]);
+
+static mut TID: libc::pthread_t = libc::pthread_t::MAX;
 static SIGMASK: Mutex<libc::sigset_t> = Mutex::new(unsafe { std::mem::zeroed() });
 static mut BARRIER: libc::pthread_barrier_t = unsafe { std::mem::zeroed() };
-static IRQS: Mutex<Vec<IRQEntry>> = Mutex::new(vec![]);
+
+pub fn intr_request_irq(
+    irq: i32,
+    handler: fn(irq: i32, NetDeviceHandler),
+    flags: IRQFlags,
+    name: String,
+    dev: NetDeviceHandler,
+) -> UtcpResult<()> {
+    let mut irqs = IRQS.lock().unwrap();
+    // check conflicts
+    for ent in &*irqs {
+        if ent.irq == irq {
+            if ent.flags.contains(IRQFlags::SHARED) == flags.contains(IRQFlags::SHARED) {
+                return Err(UtcpErr::Intr(format!(
+                    "IRQ {} already registered with the same flags",
+                    irq
+                )));
+            }
+        }
+    }
+    // Push to IRQs and update sigmask
+    irqs.push(IRQEntry {
+        irq,
+        handler,
+        flags,
+        dev,
+        debug_name: name.clone(),
+    });
+    unsafe {
+        let mut sigmask = SIGMASK.lock().unwrap();
+        libc::sigaddset(&mut *sigmask, irq as c_int);
+    }
+    log::debug!("registered irq={}, name={}", irq, name);
+    Ok(())
+}
 
 pub fn intr_init() -> UtcpResult<()> {
     log::debug!("intr init");
     {
         let tid = unsafe { libc::pthread_self() };
-        let mut tid_lock = TID.lock().unwrap();
-        *tid_lock = tid;
+        unsafe {
+            TID = tid;
+        }
     }
     {
         unsafe {
@@ -46,8 +84,7 @@ pub fn intr_run() -> UtcpResult<()> {
     if err != 0 {
         return Err(UtcpErr::Intr(format!("pthread_sigmask failed: {}", err)));
     }
-    let mut tid = TID.lock().unwrap();
-    let err = unsafe { libc::pthread_create(&mut *tid, null(), intr_thread, ptr::null_mut()) };
+    let err = unsafe { libc::pthread_create(&raw mut TID, null(), intr_thread, ptr::null_mut()) };
     if err != 0 {
         return Err(UtcpErr::Intr(format!("pthread_create failed: {}", err)));
     }
@@ -58,16 +95,23 @@ pub fn intr_run() -> UtcpResult<()> {
 
 pub fn intr_shutdown() -> UtcpResult<()> {
     unsafe {
-        let tid = TID.lock().unwrap();
         let current_tid = libc::pthread_self();
-        if libc::pthread_equal(current_tid, *tid) != 0 {
+        if libc::pthread_equal(current_tid, TID) != 0 {
             // thread not created
             return Ok(());
         }
         // Send SIGHUP to notify the intr thread
-        libc::pthread_kill(*tid, libc::SIGHUP);
+        libc::pthread_kill(TID, libc::SIGHUP);
         // Wait for the intr thread to exit
-        libc::pthread_join(*tid, null_mut());
+        libc::pthread_join(TID, null_mut());
+    }
+    Ok(())
+}
+
+pub fn intr_raise_irq(irq: i32) -> UtcpResult<()> {
+    let err = unsafe { libc::pthread_kill(TID, irq) };
+    if err != 0 {
+        return Err(UtcpErr::Intr(format!("pthread_kill failed: {}", err)));
     }
     Ok(())
 }
@@ -81,20 +125,19 @@ extern "C" fn intr_thread(_: *mut c_void) -> *mut c_void {
     while !terminate {
         {
             let sigmask = SIGMASK.lock().unwrap();
-            let mut sig = 0;
-            let err = unsafe { libc::sigwait(&*sigmask, &mut sig) };
+            let mut sig_sent = 0;
+            let err = unsafe { libc::sigwait(&*sigmask, &mut sig_sent) };
             if err != 0 {
                 log::error!("sigwait failed: {}", err);
                 break;
             }
-            if sig == libc::SIGHUP {
+            if sig_sent == libc::SIGHUP {
                 terminate = true;
             } else {
                 let irqs = IRQS.lock().unwrap();
-                for irq in &*irqs {
-                    if irq.irq == sig as u32 {
-                        // TODO:
-                        //irq.handler(irq.data);
+                for ent in &*irqs {
+                    if ent.irq == sig_sent {
+                        (ent.handler)(sig_sent, ent.dev.clone());
                     }
                 }
             }
