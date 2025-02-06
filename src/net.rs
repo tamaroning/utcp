@@ -5,7 +5,11 @@ use std::{
 
 use bitflags::bitflags;
 
-use crate::{driver::dummy::DummyNetDevice, error::UtcpResult, platform::linux::intr};
+use crate::{
+    driver::{dummy::DummyNetDevice, loopback::LoopbackNetDevice},
+    error::UtcpResult,
+    platform::linux::intr,
+};
 
 pub fn new_device_index() -> u32 {
     static IDX: AtomicU32 = AtomicU32::new(0);
@@ -26,7 +30,7 @@ bitflags! {
 #[derive(Debug)]
 pub enum NetDevice {
     Dummy(DummyNetDevice),
-    Loopback,
+    Loopback(LoopbackNetDevice),
     Ethernet,
 }
 
@@ -41,15 +45,15 @@ impl NetDevice {
     fn device_type(&self) -> NetDeviceType {
         match self {
             NetDevice::Dummy(_) => NetDeviceType::Dummy,
-            NetDevice::Loopback => NetDeviceType::Loopback,
+            NetDevice::Loopback(_) => NetDeviceType::Loopback,
             NetDevice::Ethernet => NetDeviceType::Ethernet,
         }
     }
 
     fn mtu(&self) -> u16 {
         match self {
-            NetDevice::Dummy(dev) => 0,
-            NetDevice::Loopback => todo!(),
+            NetDevice::Dummy(_) => DummyNetDevice::MTU,
+            NetDevice::Loopback(_) => LoopbackNetDevice::MTU,
             NetDevice::Ethernet => todo!(),
         }
     }
@@ -57,7 +61,7 @@ impl NetDevice {
     fn name(&self) -> &str {
         match self {
             NetDevice::Dummy(dev) => dev.name(),
-            NetDevice::Loopback => todo!(),
+            NetDevice::Loopback(dev) => dev.name(),
             NetDevice::Ethernet => todo!(),
         }
     }
@@ -65,7 +69,7 @@ impl NetDevice {
     fn is_up(&self) -> bool {
         match self {
             NetDevice::Dummy(dev) => dev.is_up(),
-            NetDevice::Loopback => false,
+            NetDevice::Loopback(dev) => dev.is_up(),
             NetDevice::Ethernet => false,
         }
     }
@@ -73,7 +77,7 @@ impl NetDevice {
     fn open(&mut self) -> UtcpResult<()> {
         match self {
             NetDevice::Dummy(dev) => dev.open(),
-            NetDevice::Loopback => todo!(),
+            NetDevice::Loopback(dev) => dev.open(),
             NetDevice::Ethernet => todo!(),
         }
     }
@@ -81,7 +85,7 @@ impl NetDevice {
     fn close(&mut self) -> UtcpResult<()> {
         match self {
             NetDevice::Dummy(dev) => dev.close(),
-            NetDevice::Loopback => todo!(),
+            NetDevice::Loopback(dev) => dev.close(),
             NetDevice::Ethernet => todo!(),
         }
     }
@@ -89,7 +93,7 @@ impl NetDevice {
     fn transmit(&mut self, data: &[u8], dst: &mut [u8]) -> UtcpResult<()> {
         match self {
             NetDevice::Dummy(dev) => dev.transmit(data, dst),
-            NetDevice::Loopback => todo!(),
+            NetDevice::Loopback(dev) => dev.transmit(data, dst),
             NetDevice::Ethernet => todo!(),
         }
     }
@@ -115,6 +119,8 @@ pub struct NetDeviceHandler(String);
 static DEVICES: LazyLock<Mutex<HashMap<String, NetDevice>>> =
     LazyLock::new(|| Mutex::new(HashMap::new()));
 
+static mut DEVICES2: LazyLock<HashMap<String, NetDevice>> = LazyLock::new(|| HashMap::new());
+
 pub fn net_init() -> UtcpResult<()> {
     intr::intr_init()?;
     log::info!("initialized");
@@ -124,6 +130,12 @@ pub fn net_init() -> UtcpResult<()> {
 pub fn net_run() -> UtcpResult<()> {
     intr::intr_run()?;
     log::info!("opening all devices");
+    /*
+    for (_, dev) in DEVICES2.iter_mut() {
+        net_device_open(dev)?;
+    }
+    */
+
     let mut devices = DEVICES.lock().unwrap();
     for (_, dev) in devices.iter_mut() {
         net_device_open(dev)?;

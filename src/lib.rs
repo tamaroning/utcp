@@ -2,6 +2,7 @@ pub mod driver;
 pub mod error;
 pub mod net;
 pub mod platform;
+pub mod utils;
 
 use env_logger::{Builder, Env, fmt::style};
 use log::Level;
@@ -14,6 +15,7 @@ pub fn log_init() {
 
     Builder::from_env(env)
         .format(|buf, record| {
+            // TODO: should use timestamp?
             let ts = ""; // buf.timestamp();
             let level = record.level();
             let target = record.target();
@@ -31,7 +33,6 @@ pub fn log_init() {
                     .on_default()
                     .effects(style::Effects::BOLD),
             };
-            // debug以下はgra_style
             let args_style = match record.level() {
                 Level::Trace | Level::Debug => gray_style,
                 _ => style::Style::new(),

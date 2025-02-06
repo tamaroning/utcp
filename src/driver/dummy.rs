@@ -4,9 +4,9 @@ use crate::{
     platform::{IRQFlags, linux::intr},
 };
 
-const SIGRTMIN: i32 = 34;
-const INTR_IRQ_BASE: i32 = SIGRTMIN + 1;
-const DUMMY_IRQ: i32 = INTR_IRQ_BASE + 1;
+use super::INTR_IRQ_BASE;
+
+const DUMMY_IRQ: i32 = INTR_IRQ_BASE;
 
 #[derive(Debug)]
 pub struct DummyNetDevice {

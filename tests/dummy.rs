@@ -1,12 +1,7 @@
-mod driver;
-mod error;
-mod net;
-mod platform;
-pub mod utils;
-
 use std::sync::{Arc, atomic::AtomicBool};
 
 use driver::dummy::DummyNetDevice;
+use utcp::{driver, net};
 
 fn main() {
     utcp::log_init();
