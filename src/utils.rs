@@ -79,3 +79,20 @@ fn test_small_queue2() {
     assert_eq!(q.pop_front(), Some((1, b"Hello, World".to_vec())));
     assert_eq!(q.pop_front(), Some((2, b"Hello, Rust".to_vec())));
 }
+
+pub fn checksum16(mut data: &[u8], init: u32) -> u16 {
+    let mut sum = init;
+    let mut count = data.len();
+    while count > 1 {
+        sum += u16::from_le_bytes([data[0], data[1]]) as u32;
+        data = &data[2..];
+        count -= 2;
+    }
+    if count > 0 {
+        sum += data[0] as u32;
+    }
+    while sum >> 16 != 0 {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    !(sum as u16)
+}
