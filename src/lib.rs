@@ -39,9 +39,9 @@ pub fn log_init() {
                 _ => style::Style::new(),
             };
 
-            write!(
+            writeln!(
                 buf,
-                "{gray_style}{ts}{gray_style:#}{level_style}[{level}]{level_style:#} {target}: {args_style}{args}{args_style:#} ({file}:{line})\n",
+                "{gray_style}{ts}{gray_style:#}{level_style}[{level}]{level_style:#} {target}: {args_style}{args}{args_style:#} ({file}:{line})",
             )
         })
         .init();

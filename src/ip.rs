@@ -161,7 +161,7 @@ const IP_ADDR_ANY: IpAddress = IpAddress(0);
 /// 255.255.255.255
 const IP_ADDR_BROADCAST: IpAddress = IpAddress(0xffffffff);
 
-fn ip_input(data: &[u8], dev: &NetDeviceHandler) {
+fn ip_input(data: &[u8], _: &NetDeviceHandler) {
     log::debug!("data={:?}", data);
 
     let Some(ip_hdr) = IpHeader::new(data) else {

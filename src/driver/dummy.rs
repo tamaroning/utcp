@@ -1,5 +1,5 @@
 use crate::{
-    error::{UtcpErr, UtcpResult},
+    error::UtcpResult,
     net::{self, NetDevice, NetDeviceFlags, NetDeviceHandler, NetDeviceOps, net_device_register},
     platform::{IRQFlags, linux::intr},
 };
@@ -22,7 +22,7 @@ impl DummyNetDevice {
             flags: NetDeviceFlags::empty(),
         };
         let handler = net_device_register(NetDevice::Dummy(dev))?;
-        let flags = IRQFlags::from(IRQFlags::SHARED);
+        let flags = IRQFlags::SHARED;
         intr::intr_request_irq(DUMMY_IRQ, dummy_isr, flags, name, handler.clone())?;
         Ok(handler)
     }

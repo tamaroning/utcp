@@ -7,6 +7,12 @@ pub struct SmallQueue<T, const N: usize> {
     tail: usize,
 }
 
+impl<T: Default, const N: usize> Default for SmallQueue<T, N> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl<T: Default, const N: usize> SmallQueue<T, N> {
     pub fn new() -> Self {
         Self {
@@ -31,7 +37,7 @@ impl<T: Default, const N: usize> SmallQueue<T, N> {
         if self.len == 0 {
             return None;
         }
-        let elem = core::mem::replace(&mut self.buf[self.head], Default::default());
+        let elem = std::mem::take(&mut self.buf[self.head]);
         self.head = (self.head + 1) % self.buf.len();
         self.len -= 1;
         Some(elem)
@@ -39,6 +45,10 @@ impl<T: Default, const N: usize> SmallQueue<T, N> {
 
     pub fn len(&self) -> usize {
         self.len
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
     }
 }
 

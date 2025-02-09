@@ -29,13 +29,11 @@ pub fn intr_request_irq(
     let mut irqs = IRQS.lock().unwrap();
     // check conflicts
     for ent in &*irqs {
-        if ent.irq == irq {
-            if ent.flags.contains(IRQFlags::SHARED) == flags.contains(IRQFlags::SHARED) {
-                return Err(UtcpErr::Intr(format!(
-                    "IRQ {} already registered with the same flags",
-                    irq
-                )));
-            }
+        if ent.irq == irq && ent.flags.contains(IRQFlags::SHARED) == flags.contains(IRQFlags::SHARED) {
+            return Err(UtcpErr::Intr(format!(
+                "IRQ {} already registered with the same flags",
+                irq
+            )));
         }
     }
     // Push to IRQs and update sigmask

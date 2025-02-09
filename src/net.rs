@@ -1,13 +1,13 @@
 use std::{
     collections::VecDeque,
-    sync::{LazyLock, LockResult, RwLock, RwLockWriteGuard, atomic::AtomicU32},
+    sync::{LazyLock, RwLock, atomic::AtomicU32},
 };
 
 use bitflags::bitflags;
-use crossbeam_skiplist::{SkipList, SkipMap, SkipSet};
+use crossbeam_skiplist::SkipMap;
 
 use crate::{
-    driver::{self, INTR_IRQ_SOFTIRQ, dummy::DummyNetDevice, loopback::LoopbackNetDevice},
+    driver::{INTR_IRQ_SOFTIRQ, dummy::DummyNetDevice, loopback::LoopbackNetDevice},
     error::{UtcpErr, UtcpResult},
     ip,
     platform::linux::intr,
@@ -140,7 +140,7 @@ impl NetDeviceHandler {
 }
 
 /// Note: Do not use this directly, use `net_device_get` instead.
-pub static DEVICES: LazyLock<SkipMap<String, RwLock<NetDevice>>> = LazyLock::new(|| SkipMap::new());
+pub static DEVICES: LazyLock<SkipMap<String, RwLock<NetDevice>>> = LazyLock::new(SkipMap::new);
 
 pub fn net_init() -> UtcpResult<()> {
     intr::intr_init()?;
@@ -155,7 +155,7 @@ pub fn net_run() -> UtcpResult<()> {
 
     for ent in DEVICES.iter() {
         let mut dev = ent.value().write().unwrap();
-        net_device_open(&mut *dev)?;
+        net_device_open(&mut dev)?;
     }
     Ok(())
 }
@@ -164,7 +164,7 @@ pub fn net_shutdown() -> UtcpResult<()> {
     intr::intr_shutdown()?;
     for ent in DEVICES.iter() {
         let mut dev = ent.value().write().unwrap();
-        net_device_close(&mut *dev)?;
+        net_device_close(&mut dev)?;
     }
     log::info!("shutting down");
     Ok(())

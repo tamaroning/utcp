@@ -30,7 +30,7 @@ impl LoopbackNetDevice {
             queue: SmallQueue::new(),
         };
         let handler = net_device_register(NetDevice::Loopback(dev))?;
-        let flags = IRQFlags::from(IRQFlags::SHARED);
+        let flags = IRQFlags::SHARED;
         intr::intr_request_irq(LOOPBACK_IRQ, loopback_isr, flags, name, handler.clone())?;
         Ok(handler)
     }
