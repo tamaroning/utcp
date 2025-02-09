@@ -1,25 +1,11 @@
 use crate::{
     error::UtcpResult,
-    net::{self, NET_PROTOCOL_TYPE_IP, NetDeviceHandler, NetProtocol},
-    utils,
+    net::{
+        self, NET_PROTOCOL_TYPE_IP, NetDeviceHandler, NetInterface, NetInterfaceHandler,
+        NetProtocol,
+    },
+    net_device_get, net_device_get_mut, net_iface_get, utils,
 };
-
-/*
-
-struct ip_hdr {
-    uint8_t vhl;
-    uint8_t tos;
-    uint16_t total;
-    uint16_t id;
-    uint16_t offset;
-    uint8_t ttl;
-    uint8_t protocol;
-    uint16_t sum;
-    ip_addr_t src;
-    ip_addr_t dst;
-    uint8_t options[];
-};
-*/
 
 #[repr(C)]
 pub struct IpHeader {
@@ -140,7 +126,55 @@ impl std::fmt::Debug for IpHeader {
 }
 
 /// IPv4 address
+#[derive(Clone, Copy, Default, Eq, PartialEq)]
 pub struct IpAddress(u32);
+
+impl IpAddress {
+    pub const fn parse_from(s: &str) -> IpAddress {
+        let bytes = s.as_bytes();
+        let mut parts = [0u8; 4];
+        let mut part_index = 0;
+        let mut value = 0u8;
+
+        let mut i = 0;
+        while i < bytes.len() {
+            let b = bytes[i];
+            if b == b'.' {
+                if part_index >= 3 {
+                    panic!("Too many parts in IPv4 address");
+                }
+                parts[part_index] = value;
+                part_index += 1;
+                value = 0;
+            } else if b >= b'0' && b <= b'9' {
+                let digit = b - b'0';
+                value = value * 10 + digit;
+            } else {
+                panic!("Invalid character in IPv4 address");
+            }
+            i += 1;
+        }
+
+        parts[part_index] = value;
+        if part_index != 3 {
+            panic!("Too few parts in IPv4 address");
+        }
+
+        IpAddress(u32::from_be_bytes(parts))
+    }
+}
+
+impl From<u32> for IpAddress {
+    fn from(addr: u32) -> Self {
+        IpAddress(addr)
+    }
+}
+
+impl From<[u8; 4]> for IpAddress {
+    fn from(octets: [u8; 4]) -> Self {
+        IpAddress(u32::from_be_bytes(octets))
+    }
+}
 
 impl std::fmt::Display for IpAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
@@ -161,9 +195,7 @@ const IP_ADDR_ANY: IpAddress = IpAddress(0);
 /// 255.255.255.255
 const IP_ADDR_BROADCAST: IpAddress = IpAddress(0xffffffff);
 
-fn ip_input(data: &[u8], _: &NetDeviceHandler) {
-    log::debug!("data={:?}", data);
-
+fn ip_input(data: &[u8], dev: &NetDeviceHandler) {
     let Some(ip_hdr) = IpHeader::new(data) else {
         log::error!("IP header is too short");
         return;
@@ -189,11 +221,68 @@ fn ip_input(data: &[u8], _: &NetDeviceHandler) {
         return;
     }
 
-    dbg!(ip_hdr);
+    // Get interfaces associated with the device
+    if let Some(iface) = ip_iface_select(ip_hdr.dst()) {
+        let dev = net_device_get!(dev);
+        log::debug!("dev={}, iface={:?}", dev.name(), iface.family);
+    } else {
+        // No interface to send the packet. Drop it.
+    }
 }
 
 pub fn ip_init() -> UtcpResult<()> {
     net::net_protocol_register(NetProtocol::new(NET_PROTOCOL_TYPE_IP, ip_input));
     log::info!("initialized");
     Ok(())
+}
+
+static mut IP_INTERFACES: Vec<NetInterfaceHandler> = Vec::new();
+
+#[allow(static_mut_refs)]
+pub fn ip_iface_register(handler: NetDeviceHandler, iface: IpInterface) -> UtcpResult<()> {
+    let dev = net_device_get_mut!(handler);
+    log::info!("registered iface: dev={}, iface={:?}", dev.name(), iface);
+    let iface_handler = dev.add_interface(handler, NetInterface::Ip(iface));
+    unsafe { IP_INTERFACES.push(iface_handler) };
+    Ok(())
+}
+
+#[derive(Debug)]
+pub struct IpInterface {
+    unicast: IpAddress,
+    netmask: IpAddress,
+    broadcast: IpAddress,
+}
+
+impl IpInterface {
+    pub fn new(unicast: IpAddress, netmask: IpAddress) -> Self {
+        let broadcast = IpAddress(unicast.0 | !netmask.0);
+        Self {
+            unicast,
+            netmask,
+            broadcast,
+        }
+    }
+}
+
+#[allow(static_mut_refs)]
+fn ip_iface_select(addr: IpAddress) -> Option<NetInterfaceHandler> {
+    for iface in unsafe { IP_INTERFACES.iter() } {
+        let net_iface = net_iface_get!(iface);
+        let ip_iface: &IpInterface = net_iface.try_into().unwrap();
+
+        // unicast?
+        if addr == ip_iface.unicast {
+            return Some(*iface);
+        }
+        // subnet broadcast?
+        if addr == ip_iface.broadcast {
+            return Some(*iface);
+        }
+        // broadcast?
+        if addr == IP_ADDR_BROADCAST {
+            return Some(*iface);
+        }
+    }
+    None
 }

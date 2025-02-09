@@ -2,9 +2,9 @@ use crate::{
     error::UtcpResult,
     net::{
         self, DEVICES, NetDevice, NetDeviceFlags, NetDeviceHandler, NetDeviceOps, NetDeviceType,
-        net_device_register,
+        NetInterface, NetInterfaceHandler, net_device_register,
     },
-    net_device_get,
+    net_device_get, net_device_get_mut,
     platform::{IRQFlags, linux::intr},
     utils::SmallQueue,
 };
@@ -19,6 +19,7 @@ pub struct LoopbackNetDevice {
     name: String,
     flags: NetDeviceFlags,
     pub(self) queue: SmallQueue<(u16, Vec<u8>), LOOPBACK_QUEUE_LIMIT>,
+    ifaces: Vec<NetInterface>,
 }
 
 impl LoopbackNetDevice {
@@ -28,11 +29,30 @@ impl LoopbackNetDevice {
             name: name.clone(),
             flags: NetDeviceFlags::empty(),
             queue: SmallQueue::new(),
+            ifaces: Vec::new(),
         };
         let handler = net_device_register(NetDevice::Loopback(dev))?;
         let flags = IRQFlags::SHARED;
         intr::intr_request_irq(LOOPBACK_IRQ, loopback_isr, flags, name, handler.clone())?;
         Ok(handler)
+    }
+
+    pub fn add_interface(
+        &mut self,
+        self_handler: NetDeviceHandler,
+        iface: NetInterface,
+    ) -> NetInterfaceHandler {
+        let handler = NetInterfaceHandler {
+            dev: self_handler,
+            iface_index: self.ifaces.len(),
+            family: iface.family(),
+        };
+        self.ifaces.push(iface);
+        handler
+    }
+
+    pub fn get_interfaces(&self) -> &[NetInterface] {
+        &self.ifaces
     }
 }
 
@@ -74,10 +94,8 @@ impl NetDeviceOps for LoopbackNetDevice {
 }
 
 fn loopback_isr(_: i32, handler: NetDeviceHandler) {
-    let ent = net_device_get!(&handler);
-    let mut guard = ent.value().write().unwrap();
-    let dev = &mut *guard;
-    let dev = dev.try_into_loopback().unwrap();
+    let dev = net_device_get_mut!(&handler);
+    let dev: &mut LoopbackNetDevice = dev.try_into().unwrap();
 
     while let Some((ty, data)) = dev.queue.pop_front() {
         // TODO: remove unwrap?
